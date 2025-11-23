@@ -23,6 +23,6 @@ services:
     environment:
       - VITE_API_URL=http://backend:8080
     ports:
-      - "9000:9000"   # accedes en http://localhost:9000
+      - "9000:80"   # accedes en http://localhost:9000
     depends_on:
       - backend
