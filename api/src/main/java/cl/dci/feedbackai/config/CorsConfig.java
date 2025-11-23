@@ -14,9 +14,16 @@ public class CorsConfig {
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
+
+        // Si algún día usas cookies/bearer en cabeceras, esto te sirve
         config.setAllowCredentials(true);
-        // En Docker usaremos http://frontend o el dominio que corresponda
-        config.setAllowedOrigins(List.of("*")); // en producción pon tu dominio específico
+
+        // IMPORTANTE: aquí NO usar "*" si allowCredentials = true
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:9000"   // donde ves tu UI
+                // si más adelante sirves la UI desde otro dominio, lo agregas aquí
+        ));
+
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
 
