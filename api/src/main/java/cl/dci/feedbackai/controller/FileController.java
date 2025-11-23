@@ -1,6 +1,5 @@
 package cl.dci.feedbackai.controller;
 
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,15 +18,13 @@ public class FileController {
 
     private final FileProcessingService fileProcessingService;
 
-    @PostMapping("/process")
-    public ResponseEntity<byte[]> processFile(@RequestParam("file") MultipartFile file) throws Exception {
-        byte[] result = fileProcessingService.processFile(file);
+    @PostMapping(value = "/process", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> processFile(@RequestParam("file") MultipartFile file) throws Exception {
+        String json = fileProcessingService.processFile(file);
 
-        String outputFilename = "resultado_" + file.getOriginalFilename();
         return ResponseEntity
                 .ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + outputFilename + "\"")
-                .contentType(MediaType.parseMediaType("text/csv")) // o application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, etc.
-                .body(result);
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(json);
     }
 }
