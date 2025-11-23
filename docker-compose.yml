@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: fde-backend
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Opcional:
+      # - OPENAI_ORG_ID=${OPENAI_ORG_ID}
+      # - OPENAI_PROJECT_ID=${OPENAI_PROJECT_ID}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: fde-frontend
+    # El frontend habla con el backend vía nombre de servicio "backend"
+    environment:
+      - VITE_API_URL=http://backend:8080
+    ports:
+      - "9000:9000"   # accedes en http://localhost:9000
+    depends_on:
+      - backend
