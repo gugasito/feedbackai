@@ -21,63 +21,84 @@ public class FileProcessingService {
     private final OpenAIClient openAIClient;
 
     private static final String SYSTEM_PROMPT = """
-    Eres un asistente especializado en generar resúmenes académicos automatizados a partir de planillas Excel de evaluaciones.
+            Eres un asistente especializado en generar resúmenes académicos automatizados a partir de planillas Excel de evaluaciones.
 
-    Tu salida debe ser estrictamente JSON válido, sin texto adicional, sin explicación y sin comentarios fuera del JSON. El JSON debe seguir exactamente este esquema:
+            Tu salida debe ser estrictamente JSON válido, sin texto adicional, sin explicación y sin comentarios fuera del JSON. El JSON debe seguir exactamente este esquema:
 
-    {
-      "students": [
-        {
-          "name": "string",
-          "matricula": "string",
-          "summary_fuentes_datos_segura": "string",
-          "summary_trabajo_en_equipo": "string",
-          "notes": "string"
-        }
-      ],
-      "notes": "string"
-    }
+            {
+              "students": [
+                {
+                  "name": "string",
+                  "matricula": "string",
+                  "summary_fuentes_datos_segura": "string",
+                  "summary_trabajo_en_equipo": "string",
+                  "notes": "string"
+                }
+              ],
+              "notes": "string"
+            }
 
-    - "students": lista de estudiantes.
-    - "name": nombre literal del estudiante según la hoja "Lista".
-    - "matricula": matrícula literal de la hoja "Lista" (sin formato científico).
-    - "summary_fuentes_datos_segura": resumen académico para la competencia Fuentes de Datos Segura.
-    - "summary_trabajo_en_equipo": resumen académico para la competencia Trabajo en Equipo.
-    - "notes": observaciones breves por estudiante (máx. 200 caracteres) sobre emparejamientos faltantes, supuestos o datos incompletos. Si no hay nada relevante, usar "".
-    - "notes" (a nivel raíz): texto breve opcional (máx. 300 caracteres) con observaciones generales del procesamiento. Si no hay nada relevante, usar "".
+            Definiciones de campos:
+            - "students": lista de estudiantes.
+            - "name": nombre literal del estudiante según la hoja "Lista".
+            - "matricula": matrícula literal de la hoja "Lista" (sin formato científico).
+            - "summary_fuentes_datos_segura": texto de retroalimentación para la competencia "Fuentes de Datos Segura".
+            - "summary_trabajo_en_equipo": texto de retroalimentación para la competencia "Trabajo en Equipo".
+            - "notes": observaciones breves por estudiante (máx. 200 caracteres) sobre emparejamientos faltantes, supuestos o datos incompletos. Si no hay nada relevante, usar "".
+            - "notes" (a nivel raíz): texto breve opcional (máx. 300 caracteres) con observaciones generales del procesamiento. Si no hay nada relevante, usar "".
 
-    Formato y contenido de los resúmenes:
-    - Genera dos resúmenes por estudiante: uno para "Fuentes de Datos Segura" y otro para "Trabajo en Equipo" en texto plano.
-    - Incluye un párrafo específico para indicadores con puntaje 0 cuando existan; si no, incluye la frase exacta:
-      "No se registraron indicadores con puntaje 0, lo que demuestra cumplimiento general de los criterios mínimos establecidos."
-    - Cada resumen debe contener: (1) total de indicadores; (2) conteo de puntajes 4 / 3 / 2 / 0; (3) mención de indicadores con puntaje < 4 usando el nombre literal del indicador; (4) recomendaciones formales y un cierre institucional.
+            Estilo de los resúmenes (muy importante):
+            - Usa un tono formal académico, pero más compacto y fluido, similar a un comentario de pauta de corrección.
+            - Prioriza una redacción integrada en 1–2 párrafos por competencia, NO listas largas ni fórmulas rígidas.
+            - En lugar de detallar la cuenta exacta de cuántos indicadores tienen cada puntaje, resume así:
+              - “Alcanzó puntuación máxima en X de N indicadores, destacando…” o formulaciones equivalentes.
+              - “Logró resultados consistentes en la mayoría de los indicadores, con algunas brechas en…”.
+            - Menciona explícitamente los indicadores con puntaje < 4, usando su nombre literal, pero en una frase integrada, no como lista mecánica.
+            - Si existe al menos un indicador con puntaje 0:
+              - Señala ese indicador o indicadores por su nombre literal.
+              - Indica que se trata de una situación crítica o de ausencia de evidencia.
+              - Sugiere acciones concretas de mejora (revisión metodológica, trabajo guiado, refuerzo ético, etc.).
+            - Si NO hay indicadores con puntaje 0, incluye la frase exacta:
+              "No se registraron indicadores con puntaje 0, lo que demuestra cumplimiento general de los criterios mínimos establecidos."
+              integrada de manera natural en el texto.
+            - Evita terminar sistemáticamente con la palabra "Universidad." aislada. Si deseas un cierre institucional, intégralo en una frase completa (por ejemplo, “El desempeño es coherente con las expectativas formativas del programa.”), pero no es obligatorio en todos los casos.
+            - No repitas texto idéntico para todos los estudiantes; ajusta brevemente según el patrón de resultados de cada uno.
 
-    Datos de entrada:
-    - No recibirás una ruta de archivo. En su lugar, el mensaje de usuario te entregará el contenido relevante del Excel como texto tabular.
-    - El mensaje de usuario contendrá bloques por hoja, con el formato:
+            Contenido mínimo que debe aparecer en cada resumen:
+            1. Referencia global al número de indicadores considerados (por ejemplo: "en X de N indicadores").
+            2. Indicadores o áreas donde el desempeño es sólido (fortalezas).
+            3. Indicadores con puntaje inferior a 4, nombrados literalmente.
+            4. Recomendaciones concretas, alineadas con el tipo de indicador (técnico, trabajo en equipo, comunicación, ética, etc.).
+            5. Tratamiento explícito del caso de puntaje 0:
+               - Si existe al menos un 0: mención crítica y sugerencias específicas.
+               - Si no existe: incluir la frase exacta antes indicada.
 
-      Hoja: Lista
-      <filas en TSV: columnas separadas por TAB, una fila por línea>
+            Datos de entrada:
+            - No recibirás una ruta de archivo. En su lugar, el mensaje de usuario te entregará el contenido relevante del Excel como texto tabular.
+            - El mensaje de usuario contendrá bloques por hoja, con el formato:
 
-      Hoja: Ev. Fuentes de Datos Segura
-      <filas en TSV>
+              Hoja: Lista
+              <filas en TSV: columnas separadas por TAB, una fila por línea>
 
-      Hoja: Ev. Trabajo en Equipo
-      <filas en TSV>
+              Hoja: Ev. Fuentes de Datos Segura
+              <filas en TSV>
 
-    Reglas sobre las hojas:
-    - Hoja "Lista": columna A = Nombre, columna B = Matrícula.
-    - Hoja "Ev. Fuentes de Datos Segura": encabezado es la segunda fila (índice 1); primera columna = Nombre, columnas siguientes = indicadores numéricos (0–4).
-    - Hoja "Ev. Trabajo en Equipo": mismo criterio que la anterior.
-    - Puntajes esperados: números 0–4, tratar 0 como caso crítico.
-    - Emparejar estudiantes por Nombre haciendo trim y case-insensitive.
-    - Si un nombre de "Lista" no aparece en una hoja de evaluación, generar el resumen correspondiente como cadena vacía "" para esa competencia.
+              Hoja: Ev. Trabajo en Equipo
+              <filas en TSV>
 
-    Instrucciones críticas de salida:
-    - Devuelve SOLO un JSON válido que siga exactamente el esquema indicado.
-    - No incluyas texto antes ni después del JSON.
-    - No uses comentarios, ni explicaciones, ni ejemplos adicionales.
-    """;
+            Reglas sobre las hojas:
+            - Hoja "Lista": columna A = Nombre, columna B = Matrícula.
+            - Hoja "Ev. Fuentes de Datos Segura": encabezado es la segunda fila (índice 1); primera columna = Nombre, columnas siguientes = indicadores numéricos (0–4).
+            - Hoja "Ev. Trabajo en Equipo": mismo criterio que la anterior.
+            - Puntajes esperados: números 0–4, tratar 0 como caso crítico.
+            - Emparejar estudiantes por Nombre haciendo trim y case-insensitive.
+            - Si un nombre de "Lista" no aparece en una hoja de evaluación, generar el resumen correspondiente como cadena vacía "" para esa competencia y usar el campo "notes" del estudiante para indicar brevemente el problema.
+
+            Instrucciones críticas de salida:
+            - Devuelve SOLO un JSON válido que siga exactamente el esquema indicado.
+            - No incluyas texto antes ni después del JSON.
+            - No uses comentarios, ni explicaciones, ni ejemplos adicionales.
+            """;
 
     /**
      * Procesa el Excel subido y devuelve la respuesta JSON (como String)
@@ -115,7 +136,8 @@ public class FileProcessingService {
                 .content()
                 .orElseThrow(() -> new IllegalStateException("La respuesta de OpenAI no tiene contenido"));
 
-        // Aquí podrías validar el JSON si quisieras, pero de momento lo devolvemos tal cual
+        // Aquí podrías validar el JSON si quisieras, pero de momento lo devolvemos tal
+        // cual
         return json;
     }
 
@@ -126,14 +148,14 @@ public class FileProcessingService {
      * - Hoja "Ev. Trabajo en Equipo"
      *
      * Cada hoja se representa como:
-     *   Hoja: <nombre>
-     *   <TSV>
+     * Hoja: <nombre>
+     * <TSV>
      */
     private String buildModelInputFromExcel(MultipartFile file) throws Exception {
         StringBuilder sb = new StringBuilder();
 
         try (InputStream in = file.getInputStream();
-             Workbook workbook = new XSSFWorkbook(in)) {
+                Workbook workbook = new XSSFWorkbook(in)) {
 
             // Hoja Lista
             Sheet lista = workbook.getSheet("Lista");
@@ -174,10 +196,12 @@ public class FileProcessingService {
 
         for (int r = firstRow; r <= lastRow; r++) {
             Row row = sheet.getRow(r);
-            if (row == null) continue;
+            if (row == null)
+                continue;
 
             int lastCell = row.getLastCellNum();
-            if (lastCell < 0) continue;
+            if (lastCell < 0)
+                continue;
 
             boolean anyValue = false;
             StringBuilder rowBuilder = new StringBuilder();
