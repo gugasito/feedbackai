@@ -21,7 +21,8 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 const Dashboard = ({ onLogout }: DashboardProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<any | null>(null); // 👈 aquí guardaremos el JSON
+  const [result, setResult] = useState<any | null>(null); // JSON de la API
+  const [lastFilename, setLastFilename] = useState<string | null>(null); // nombre del archivo fuente
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -52,7 +53,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         throw new Error("Error al procesar el archivo");
       }
 
-      const text = await response.text(); // 👈 leemos como texto crudo primero
+      const text = await response.text(); // leemos como texto crudo primero
       console.log("Texto bruto desde backend:", text);
 
       let data: any;
@@ -66,6 +67,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       }
 
       setResult(data);
+      setLastFilename(file.name); // guardamos el nombre original
       toast.success("Archivo procesado correctamente");
       setFile(null);
     } catch (err) {
@@ -73,6 +75,36 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       toast.error("Ocurrió un error al procesar el archivo");
     } finally {
       setUploading(false);
+    }
+  };
+
+  // 👉 nuevo: descarga el JSON actual
+  const handleDownloadJson = () => {
+    if (!result) {
+      toast.error("No hay resultados para descargar");
+      return;
+    }
+
+    try {
+      const jsonString = JSON.stringify(result, null, 2); // con indentación
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+
+      // nombre sugerido: nombreArchivoOriginal_salida.json
+      const baseName =
+        lastFilename?.replace(/\.[^/.]+$/, "") || "retroalimentacion";
+      const filename = `${baseName}_resultado.json`;
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error al generar descarga JSON:", err);
+      toast.error("No se pudo descargar el archivo JSON");
     }
   };
 
@@ -134,9 +166,24 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
           {/* Card de resultados / archivos recientes */}
           <Card>
-            <CardHeader>
-              <CardTitle>Resultados recientes</CardTitle>
-              <CardDescription>Resúmenes generados por la API</CardDescription>
+            <CardHeader className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle>Resultados recientes</CardTitle>
+                <CardDescription>
+                  Resúmenes generados por la API
+                </CardDescription>
+              </div>
+
+              {/* 👉 Botón para descargar JSON, solo si hay resultado */}
+              {result && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadJson}
+                >
+                  Descargar JSON
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {!result || !result.students || result.students.length === 0 ? (
