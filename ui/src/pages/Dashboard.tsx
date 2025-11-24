@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +17,9 @@ interface DashboardProps {
 }
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const ESTIMATED_DURATION_MS = 120_000; // 2 minutos
+const PROGRESS_TARGET = 90;            // hasta dónde llega la barra "fake"
+const PROGRESS_INTERVAL_MS = 1_000;    // cada cuánto actualizamos (1s)
 
 const Dashboard = ({ onLogout }: DashboardProps) => {
   const [file, setFile] = useState<File | null>(null);
@@ -24,10 +27,46 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const [result, setResult] = useState<any | null>(null); // JSON de la API
   const [lastFilename, setLastFilename] = useState<string | null>(null); // nombre del archivo fuente
 
+  // 👇 nuevo: estado y ref para la barra de progreso
+  const [progress, setProgress] = useState<number>(0);
+  const [showProgress, setShowProgress] = useState<boolean>(false);
+  const progressIntervalRef = useRef<number | null>(null);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
     }
+  };
+
+  const startFakeProgress = () => {
+    setShowProgress(true);
+    setProgress(5); // arranque rápido para que se vea que empezó
+
+    const steps = ESTIMATED_DURATION_MS / PROGRESS_INTERVAL_MS;
+    const increment = PROGRESS_TARGET / steps; // cuánto sube por tick
+
+    const id = window.setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= PROGRESS_TARGET) return prev; // no pasar de 90%
+        const next = prev + increment;
+        return next > PROGRESS_TARGET ? PROGRESS_TARGET : next;
+      });
+    }, PROGRESS_INTERVAL_MS);
+
+    progressIntervalRef.current = id;
+  };
+
+  const stopFakeProgress = () => {
+    if (progressIntervalRef.current !== null) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    setProgress(100);
+    // Pequeña pausa para que el usuario vea el 100%
+    setTimeout(() => {
+      setShowProgress(false);
+      setProgress(0);
+    }, 600);
   };
 
   const handleUpload = async () => {
@@ -37,6 +76,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
 
     setUploading(true);
+    startFakeProgress();
 
     try {
       const formData = new FormData();
@@ -63,6 +103,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         console.error("No se pudo parsear JSON:", e);
         toast.error("La respuesta del servidor no es un JSON válido");
         setUploading(false);
+        stopFakeProgress();
         return;
       }
 
@@ -75,10 +116,11 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       toast.error("Ocurrió un error al procesar el archivo");
     } finally {
       setUploading(false);
+      stopFakeProgress();
     }
   };
 
-  // 👉 nuevo: descarga el JSON actual
+  // 👉 descarga el JSON actual
   const handleDownloadJson = () => {
     if (!result) {
       toast.error("No hay resultados para descargar");
@@ -161,6 +203,22 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
               >
                 {uploading ? "Procesando..." : "Procesar archivo"}
               </Button>
+
+              {/* 👇 Barra de progreso mientras se está procesando */}
+              {showProgress && (
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>Procesando archivo...</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-secondary/60 overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -174,7 +232,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 </CardDescription>
               </div>
 
-              {/* 👉 Botón para descargar JSON, solo si hay resultado */}
+              {/* Botón para descargar JSON, solo si hay resultado */}
               {result && (
                 <Button
                   variant="outline"
