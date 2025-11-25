@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,6 +32,22 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const [progress, setProgress] = useState<number>(0);
   const [showProgress, setShowProgress] = useState<boolean>(false);
   const progressIntervalRef = useRef<number | null>(null);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles && acceptedFiles.length > 0) {
+      setFile(acceptedFiles[0]);
+    }
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/csv': ['.csv'],
+      'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+    },
+    multiple: false
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -179,14 +196,27 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="file">Seleccionar archivo</Label>
-                <Input
-                  id="file"
-                  type="file"
-                  onChange={handleFileChange}
-                  accept=".xls,.xlsx,.csv"
-                />
+              <div
+                {...getRootProps()}
+                className={`
+                  border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
+                  ${isDragActive ? "border-primary bg-primary/10" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"}
+                `}
+              >
+                <input {...getInputProps()} onChange={handleFileChange} />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-4 rounded-full bg-background shadow-sm">
+                    <Upload className={`h-8 w-8 ${isDragActive ? "text-primary" : "text-muted-foreground"}`} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {isDragActive ? "Suelta el archivo aquí" : "Arrastra tu archivo aquí"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      o haz clic para seleccionar (.xls, .xlsx, .csv)
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {file && (
