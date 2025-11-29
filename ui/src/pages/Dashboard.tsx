@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,31 +8,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Upload, FileText, LogOut } from "lucide-react";
 import jsPDF from "jspdf";
+import Loader from "@/components/Loader"; // 👈 importa tu loader
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
+// Puedes seguir usando la misma URL de API
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
-const ESTIMATED_DURATION_MS = 120_000; // 2 minutos
-const PROGRESS_TARGET = 90; // hasta dónde llega la barra "fake"
-const PROGRESS_INTERVAL_MS = 1_000; // cada cuánto actualizamos (1s)
+
+/* ------------------------ Dashboard ------------------------ */
 
 const Dashboard = ({ onLogout }: DashboardProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<any | null>(null); // JSON de la API
+  const [result, setResult] = useState<any | null>(null); // JSON de la API (informe 1)
   const [lastFilename, setLastFilename] = useState<string | null>(null); // nombre del archivo fuente
-
-  // 👇 nuevo: estado y ref para la barra de progreso
-  const [progress, setProgress] = useState<number>(0);
-  const [showProgress, setShowProgress] = useState<boolean>(false);
-  const progressIntervalRef = useRef<number | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles && acceptedFiles.length > 0) {
@@ -58,37 +52,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
   };
 
-  const startFakeProgress = () => {
-    setShowProgress(true);
-    setProgress(5); // arranque rápido para que se vea que empezó
-
-    const steps = ESTIMATED_DURATION_MS / PROGRESS_INTERVAL_MS;
-    const increment = PROGRESS_TARGET / steps; // cuánto sube por tick
-
-    const id = window.setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= PROGRESS_TARGET) return prev; // no pasar de 90%
-        const next = prev + increment;
-        return next > PROGRESS_TARGET ? PROGRESS_TARGET : next;
-      });
-    }, PROGRESS_INTERVAL_MS);
-
-    progressIntervalRef.current = id;
-  };
-
-  const stopFakeProgress = () => {
-    if (progressIntervalRef.current !== null) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    setProgress(100);
-    // Pequeña pausa para que el usuario vea el 100%
-    setTimeout(() => {
-      setShowProgress(false);
-      setProgress(0);
-    }, 600);
-  };
-
   const handleUpload = async () => {
     if (!file) {
       toast.error("Por favor selecciona un archivo");
@@ -96,7 +59,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
 
     setUploading(true);
-    startFakeProgress();
 
     try {
       const formData = new FormData();
@@ -123,11 +85,10 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         console.error("No se pudo parsear JSON:", e);
         toast.error("La respuesta del servidor no es un JSON válido");
         setUploading(false);
-        stopFakeProgress();
         return;
       }
 
-      setResult(data);
+      setResult(data); // Informe 1
       setLastFilename(file.name); // guardamos el nombre original
       toast.success("Archivo procesado correctamente");
       setFile(null);
@@ -136,13 +97,16 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       toast.error("Ocurrió un error al procesar el archivo");
     } finally {
       setUploading(false);
-      stopFakeProgress();
     }
   };
 
-  // 👉 descarga el JSON actual
+  // hay datos para el informe 1
+  const hasResult =
+    !!result && Array.isArray(result.students) && result.students.length > 0;
+
+  // 👉 descarga el JSON actual (informe 1)
   const handleDownloadJson = () => {
-    if (!result) {
+    if (!hasResult) {
       toast.error("No hay resultados para descargar");
       return;
     }
@@ -152,10 +116,9 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       const blob = new Blob([jsonString], { type: "application/json" });
       const url = window.URL.createObjectURL(blob);
 
-      // nombre sugerido: nombreArchivoOriginal_salida.json
       const baseName =
         lastFilename?.replace(/\.[^/.]+$/, "") || "retroalimentacion";
-      const filename = `${baseName}_resultado.json`;
+      const filename = `${baseName}_informe1.json`;
 
       const a = document.createElement("a");
       a.href = url;
@@ -170,10 +133,9 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
   };
 
-  // 👉 descarga los resultados en PDF
-  // 👉 descarga los resultados en PDF
+  // 👉 descarga los resultados en PDF (informe 1)
   const handleDownloadPdf = () => {
-    if (!result || !result.students || result.students.length === 0) {
+    if (!hasResult) {
       toast.error("No hay resultados para descargar");
       return;
     }
@@ -187,7 +149,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       const marginX = 40;
       const marginY = 40;
 
-      // dimensiones reales de la página
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const maxWidth = pageWidth - marginX * 2;
@@ -197,9 +158,8 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
       const baseName =
         lastFilename?.replace(/\.[^/.]+$/, "") || "retroalimentacion";
-      const filename = `${baseName}_resultado.pdf`;
+      const filename = `${baseName}_informe1.pdf`;
 
-      // helper para salto de página
       const ensureSpace = (lines: number) => {
         const needed = lines * lineHeight;
         if (y + needed > pageHeight - marginY) {
@@ -209,12 +169,10 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       };
 
       result.students.forEach((student: any, index: number) => {
-        // separación entre estudiantes (menos para el primero)
         if (index > 0) {
           y += lineHeight * 2;
         }
 
-        // === Nombre + matrícula EN VARIAS LÍNEAS ===
         doc.setFontSize(12);
         doc.setFont("Helvetica", "bold");
 
@@ -225,11 +183,9 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         doc.text(headerLines, marginX, y);
         y += headerLines.length * lineHeight + lineHeight * 0.3;
 
-        // Resto del contenido
         doc.setFontSize(11);
         doc.setFont("Helvetica", "normal");
 
-        // Fuentes de Datos Segura
         const fdTitle = "Fuentes de Datos Segura:";
         const fdText = student.summary_fuentes_datos_segura || "";
         const fdLines = doc.splitTextToSize(`${fdTitle}\n${fdText}`, maxWidth);
@@ -237,7 +193,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         doc.text(fdLines, marginX, y);
         y += fdLines.length * lineHeight + lineHeight * 0.5;
 
-        // Trabajo en Equipo
         const teTitle = "Trabajo en Equipo:";
         const teText = student.summary_trabajo_en_equipo || "";
         const teLines = doc.splitTextToSize(`${teTitle}\n${teText}`, maxWidth);
@@ -245,7 +200,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         doc.text(teLines, marginX, y);
         y += teLines.length * lineHeight;
 
-        // Nota por estudiante (si existe)
         if (student.notes && student.notes.trim() !== "") {
           const notesTitle = "Nota:";
           const notesText = student.notes.trim();
@@ -255,7 +209,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
           );
           ensureSpace(notesLines.length + 1);
           doc.setFontSize(10);
-          doc.setTextColor(180, 120, 0); // tono ámbar suave
+          doc.setTextColor(180, 120, 0);
           doc.text(notesLines, marginX, y);
           y += notesLines.length * lineHeight;
           doc.setTextColor(0, 0, 0);
@@ -263,7 +217,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         }
       });
 
-      // Nota general (a nivel raíz) si existe
       if (result.notes && result.notes.trim() !== "") {
         y += lineHeight * 2;
         const rootNotesTitle = "Notas generales:";
@@ -291,7 +244,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       <header className="border-b bg-card/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            proyecto FDE
+            FeedbackAI
           </h1>
           <Button variant="outline" onClick={onLogout}>
             <LogOut className="mr-2 h-4 w-4" />
@@ -301,163 +254,206 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto space-y-6">
-          {/* Card de subida */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5 text-primary" />
-                Subir archivos
-              </CardTitle>
-              <CardDescription>
-                Sube archivos con nombres de alumnos, rúbricas y evaluaciones
-                para generar retroalimentación
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div
-                {...getRootProps()}
-                className={`
-                  border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                  ${
-                    isDragActive
-                      ? "border-primary bg-primary/10"
-                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
-                  }
-                `}
-              >
-                <input {...getInputProps()} onChange={handleFileChange} />
-                <div className="flex flex-col items-center gap-2">
-                  <div className="p-4 rounded-full bg-background shadow-sm">
-                    <Upload
-                      className={`h-8 w-8 ${
-                        isDragActive ? "text-primary" : "text-muted-foreground"
-                      }`}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      {isDragActive
-                        ? "Suelta el archivo aquí"
-                        : "Arrastra tu archivo aquí"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      o haz clic para seleccionar (.xls, .xlsx, .csv)
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {file && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/50">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">{file.name}</span>
-                </div>
-              )}
-
-              <Button
-                onClick={handleUpload}
-                disabled={!file || uploading}
-                className="w-full"
-              >
-                {uploading ? "Procesando..." : "Procesar archivo"}
-              </Button>
-
-              {/* 👇 Barra de progreso mientras se está procesando */}
-              {showProgress && (
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>Procesando archivo...</span>
-                    <span>{progress}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-secondary/60 overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all duration-300"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Card de resultados / archivos recientes */}
-          <Card>
-            <CardHeader className="flex items-center justify-between gap-2">
-              <div>
-                <CardTitle>Resultados recientes</CardTitle>
+        {/* Layout en dos columnas: izquierda subida, derecha informes */}
+        <div className="grid gap-6 lg:grid-cols-2 items-start">
+          {/* Columna izquierda: subida de archivos */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="h-5 w-5 text-primary" />
+                  Subir archivos
+                </CardTitle>
                 <CardDescription>
-                  Resúmenes generados por la API
+                  Sube archivos con nombres de alumnos, rúbricas y evaluaciones
+                  para generar retroalimentación
                 </CardDescription>
-              </div>
-
-              {/* Botón para descargar JSON, solo si hay resultado */}
-              {result && (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDownloadJson}
-                  >
-                    Descargar JSON
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDownloadPdf}
-                  >
-                    Descargar PDF
-                  </Button>
-                </div>
-              )}
-            </CardHeader>
-            <CardContent>
-              {!result || !result.students || result.students.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No hay resultados aún
-                </p>
-              ) : (
-                <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                  {result.students.map((student: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="border rounded-lg p-3 bg-background/60 space-y-1"
-                    >
-                      <div className="flex justify-between items-center">
-                        <p className="font-medium">
-                          {student.name}{" "}
-                          <span className="text-xs text-muted-foreground">
-                            ({student.matricula})
-                          </span>
-                        </p>
-                      </div>
-                      <div className="mt-2">
-                        <p className="text-xs font-semibold mb-1">
-                          Fuentes de Datos Segura:
-                        </p>
-                        <p className="text-xs text-muted-foreground whitespace-pre-line">
-                          {student.summary_fuentes_datos_segura}
-                        </p>
-                      </div>
-                      <div className="mt-2">
-                        <p className="text-xs font-semibold mb-1">
-                          Trabajo en Equipo:
-                        </p>
-                        <p className="text-xs text-muted-foreground whitespace-pre-line">
-                          {student.summary_trabajo_en_equipo}
-                        </p>
-                      </div>
-                      {student.notes && student.notes.trim() !== "" && (
-                        <p className="text-[10px] text-amber-700 mt-2">
-                          Nota: {student.notes}
-                        </p>
-                      )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div
+                  {...getRootProps()}
+                  className={`
+                    border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
+                    ${
+                      isDragActive
+                        ? "border-primary bg-primary/10"
+                        : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                    }
+                  `}
+                >
+                  <input {...getInputProps()} onChange={handleFileChange} />
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="p-4 rounded-full bg-background shadow-sm">
+                      <Upload
+                        className={`h-8 w-8 ${
+                          isDragActive
+                            ? "text-primary"
+                            : "text-muted-foreground"
+                        }`}
+                      />
                     </div>
-                  ))}
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        {isDragActive
+                          ? "Suelta el archivo aquí"
+                          : "Arrastra tu archivo aquí"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        o haz clic para seleccionar (.xls, .xlsx, .csv)
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+
+                {file && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/50">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{file.name}</span>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleUpload}
+                  disabled={!file || uploading}
+                  className="w-full"
+                >
+                  {uploading ? "Procesando..." : "Procesar archivo"}
+                </Button>
+
+                {/* Loader infinito mientras se procesa */}
+                {uploading && (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <span className="text-xs text-muted-foreground"></span>
+                    <span className="text-xs text-muted-foreground"></span>
+                    <span className="text-xs text-muted-foreground"></span>
+                    <Loader />
+                    <span className="text-xs text-muted-foreground"></span>
+                    <span className="text-xs text-muted-foreground">
+                      Procesando archivo, esto puede tomar un par de minutos...
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Columna derecha: resultados / informes */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Informes generados</CardTitle>
+                <CardDescription>
+                  El archivo se procesará en 4 informes distintos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Informe 1 */}
+                  <Card className="border-primary/40">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-sm">
+                            Informe 1: Retroalimentación por estudiante
+                          </CardTitle>
+                        </div>
+                        <span
+                          className={`text-[10px] px-2 py-1 rounded-full ${
+                            uploading
+                              ? "bg-yellow-100 text-yellow-800"
+                              : hasResult
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {uploading
+                            ? "Generando..."
+                            : hasResult
+                            ? "Listo"
+                            : "Pendiente"}
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 pt-0">
+                      <p className="text-xs text-muted-foreground">
+                        {hasResult
+                          ? `Estudiantes procesados: ${result.students.length}`
+                          : null}
+                      </p>
+
+                      {hasResult && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDownloadPdf}
+                          >
+                            Descargar PDF
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDownloadJson}
+                          >
+                            Descargar JSON
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Informe 2 */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-sm">
+                            Informe 2: (Próximamente)
+                          </CardTitle>
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                          En desarrollo
+                        </span>
+                      </div>
+                    </CardHeader>
+                  </Card>
+
+                  {/* Informe 3 */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-sm">
+                            Informe 3: (Próximamente)
+                          </CardTitle>
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                          En desarrollo
+                        </span>
+                      </div>
+                    </CardHeader>
+                  </Card>
+
+                  {/* Informe 4 */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-sm">
+                            Informe 4: (Próximamente)
+                          </CardTitle>
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                          En desarrollo
+                        </span>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
     </div>

@@ -19,7 +19,7 @@ const Login = ({
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="space-y-2 text-center">
           <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            ​NOMBREdeLOqueSEAesto        
+            FeedbackAI        
           </CardTitle>
           <CardDescription className="text-base">
             Sistema de retroalimentación educativa con IA
