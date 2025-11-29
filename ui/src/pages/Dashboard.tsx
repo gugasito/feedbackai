@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Upload, FileText, LogOut } from "lucide-react";
+import jsPDF from "jspdf";
 
 interface DashboardProps {
   onLogout: () => void;
@@ -19,8 +20,8 @@ interface DashboardProps {
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 const ESTIMATED_DURATION_MS = 120_000; // 2 minutos
-const PROGRESS_TARGET = 90;            // hasta dónde llega la barra "fake"
-const PROGRESS_INTERVAL_MS = 1_000;    // cada cuánto actualizamos (1s)
+const PROGRESS_TARGET = 90; // hasta dónde llega la barra "fake"
+const PROGRESS_INTERVAL_MS = 1_000; // cada cuánto actualizamos (1s)
 
 const Dashboard = ({ onLogout }: DashboardProps) => {
   const [file, setFile] = useState<File | null>(null);
@@ -42,11 +43,13 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'text/csv': ['.csv'],
-      'application/vnd.ms-excel': ['.xls'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+      "text/csv": [".csv"],
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
+        ".xlsx",
+      ],
     },
-    multiple: false
+    multiple: false,
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,6 +170,122 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
   };
 
+  // 👉 descarga los resultados en PDF
+  // 👉 descarga los resultados en PDF
+  const handleDownloadPdf = () => {
+    if (!result || !result.students || result.students.length === 0) {
+      toast.error("No hay resultados para descargar");
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        unit: "pt",
+        format: "a4",
+      });
+
+      const marginX = 40;
+      const marginY = 40;
+
+      // dimensiones reales de la página
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxWidth = pageWidth - marginX * 2;
+
+      const lineHeight = 14;
+      let y = marginY;
+
+      const baseName =
+        lastFilename?.replace(/\.[^/.]+$/, "") || "retroalimentacion";
+      const filename = `${baseName}_resultado.pdf`;
+
+      // helper para salto de página
+      const ensureSpace = (lines: number) => {
+        const needed = lines * lineHeight;
+        if (y + needed > pageHeight - marginY) {
+          doc.addPage();
+          y = marginY;
+        }
+      };
+
+      result.students.forEach((student: any, index: number) => {
+        // separación entre estudiantes (menos para el primero)
+        if (index > 0) {
+          y += lineHeight * 2;
+        }
+
+        // === Nombre + matrícula EN VARIAS LÍNEAS ===
+        doc.setFontSize(12);
+        doc.setFont("Helvetica", "bold");
+
+        const headerText = `${student.name} (${student.matricula})`;
+        const headerLines = doc.splitTextToSize(headerText, maxWidth);
+
+        ensureSpace(headerLines.length);
+        doc.text(headerLines, marginX, y);
+        y += headerLines.length * lineHeight + lineHeight * 0.3;
+
+        // Resto del contenido
+        doc.setFontSize(11);
+        doc.setFont("Helvetica", "normal");
+
+        // Fuentes de Datos Segura
+        const fdTitle = "Fuentes de Datos Segura:";
+        const fdText = student.summary_fuentes_datos_segura || "";
+        const fdLines = doc.splitTextToSize(`${fdTitle}\n${fdText}`, maxWidth);
+        ensureSpace(fdLines.length + 1);
+        doc.text(fdLines, marginX, y);
+        y += fdLines.length * lineHeight + lineHeight * 0.5;
+
+        // Trabajo en Equipo
+        const teTitle = "Trabajo en Equipo:";
+        const teText = student.summary_trabajo_en_equipo || "";
+        const teLines = doc.splitTextToSize(`${teTitle}\n${teText}`, maxWidth);
+        ensureSpace(teLines.length + 1);
+        doc.text(teLines, marginX, y);
+        y += teLines.length * lineHeight;
+
+        // Nota por estudiante (si existe)
+        if (student.notes && student.notes.trim() !== "") {
+          const notesTitle = "Nota:";
+          const notesText = student.notes.trim();
+          const notesLines = doc.splitTextToSize(
+            `${notesTitle} ${notesText}`,
+            maxWidth
+          );
+          ensureSpace(notesLines.length + 1);
+          doc.setFontSize(10);
+          doc.setTextColor(180, 120, 0); // tono ámbar suave
+          doc.text(notesLines, marginX, y);
+          y += notesLines.length * lineHeight;
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(11);
+        }
+      });
+
+      // Nota general (a nivel raíz) si existe
+      if (result.notes && result.notes.trim() !== "") {
+        y += lineHeight * 2;
+        const rootNotesTitle = "Notas generales:";
+        const rootNotesText = result.notes.trim();
+        const rootLines = doc.splitTextToSize(rootNotesText, maxWidth);
+        ensureSpace(rootLines.length + 2);
+
+        doc.setFontSize(11);
+        doc.setFont("Helvetica", "bold");
+        doc.text(rootNotesTitle, marginX, y);
+        y += lineHeight;
+        doc.setFont("Helvetica", "normal");
+        doc.text(rootLines, marginX, y);
+      }
+
+      doc.save(filename);
+    } catch (err) {
+      console.error("Error al generar PDF:", err);
+      toast.error("No se pudo descargar el PDF");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-accent/20">
       <header className="border-b bg-card/80 backdrop-blur-sm">
@@ -200,17 +319,27 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 {...getRootProps()}
                 className={`
                   border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                  ${isDragActive ? "border-primary bg-primary/10" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"}
+                  ${
+                    isDragActive
+                      ? "border-primary bg-primary/10"
+                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                  }
                 `}
               >
                 <input {...getInputProps()} onChange={handleFileChange} />
                 <div className="flex flex-col items-center gap-2">
                   <div className="p-4 rounded-full bg-background shadow-sm">
-                    <Upload className={`h-8 w-8 ${isDragActive ? "text-primary" : "text-muted-foreground"}`} />
+                    <Upload
+                      className={`h-8 w-8 ${
+                        isDragActive ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    />
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm font-medium">
-                      {isDragActive ? "Suelta el archivo aquí" : "Arrastra tu archivo aquí"}
+                      {isDragActive
+                        ? "Suelta el archivo aquí"
+                        : "Arrastra tu archivo aquí"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       o haz clic para seleccionar (.xls, .xlsx, .csv)
@@ -264,13 +393,22 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
               {/* Botón para descargar JSON, solo si hay resultado */}
               {result && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadJson}
-                >
-                  Descargar JSON
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownloadJson}
+                  >
+                    Descargar JSON
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownloadPdf}
+                  >
+                    Descargar PDF
+                  </Button>
+                </div>
               )}
             </CardHeader>
             <CardContent>
