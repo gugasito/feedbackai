@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import cl.dci.feedbackai.service.FileProcessingService;
+import cl.dci.feedbackai.service.AlumnosProcessingService;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -16,7 +16,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class FileController {
 
-    private final FileProcessingService fileProcessingService;
+    private final AlumnosProcessingService fileProcessingService;
 
     @PostMapping(value = "/process", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> processFile(@RequestParam("file") MultipartFile file) throws Exception {
