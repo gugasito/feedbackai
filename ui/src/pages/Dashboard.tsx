@@ -11,16 +11,43 @@ import {
 import { toast } from "sonner";
 import { Upload, FileText, LogOut } from "lucide-react";
 import jsPDF from "jspdf";
-import Loader from "@/components/Loader"; // 👈 importa tu loader
+import JSZip from "jszip"; // ✅ NUEVO
+import Loader from "@/components/Loader";
+
+// ✅ NUEVO: texto plantilla con definición de indicadores
+const INDICATOR_DEFINITIONS_TITLE = "Definición de los indicadores evaluados";
+const INDICATOR_DEFINITIONS_BODY = `
+Los indicadores utilizados en esta evaluación corresponden a dos competencias principales:
+
+1. Fuentes de Datos Segura:
+   Evalúa la capacidad del estudiante para:
+   - Seleccionar fuentes de información pertinentes, actualizadas y confiables.
+   - Contrastar información proveniente de diferentes fuentes.
+   - Citar y referenciar adecuadamente los datos utilizados.
+   - Utilizar criterios de calidad y veracidad al incorporar información en su trabajo académico.
+
+2. Trabajo en Equipo:
+   Evalúa la capacidad del estudiante para:
+   - Colaborar de manera activa con sus compañeros en el logro de objetivos comunes.
+   - Asumir responsabilidades dentro del equipo y cumplir con los compromisos adquiridos.
+   - Mantener una comunicación respetuosa y efectiva.
+   - Aportar ideas, escuchar a otros y contribuir a la resolución de conflictos.
+
+Escala de evaluación de los indicadores (0 a 4 puntos):
+- 4 puntos: Desempeño sobresaliente y consistente en el indicador.
+- 3 puntos: Desempeño adecuado, con oportunidades de mejora puntual.
+- 2 puntos: Desempeño insuficiente, se requiere mayor desarrollo de la competencia.
+- 0 puntos: El indicador no se evidencia en el trabajo realizado.
+
+Estos indicadores permiten orientar la retroalimentación para que el estudiante comprenda
+qué aspectos específicos debe mantener, reforzar o mejorar en su desempeño académico.
+`.trim();
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
-// Puedes seguir usando la misma URL de API
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
-
-/* ------------------------ Dashboard ------------------------ */
 
 const Dashboard = ({ onLogout }: DashboardProps) => {
   const [file, setFile] = useState<File | null>(null);
@@ -75,7 +102,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         throw new Error("Error al procesar el archivo");
       }
 
-      const text = await response.text(); // leemos como texto crudo primero
+      const text = await response.text();
       console.log("Texto bruto desde backend:", text);
 
       let data: any;
@@ -88,8 +115,8 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         return;
       }
 
-      setResult(data); // Informe 1
-      setLastFilename(file.name); // guardamos el nombre original
+      setResult(data);
+      setLastFilename(file.name);
       toast.success("Archivo procesado correctamente");
       setFile(null);
     } catch (err) {
@@ -100,40 +127,9 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
   };
 
-  // hay datos para el informe 1
   const hasResult =
     !!result && Array.isArray(result.students) && result.students.length > 0;
 
-  // 👉 descarga el JSON actual (informe 1)
-  const handleDownloadJson = () => {
-    if (!hasResult) {
-      toast.error("No hay resultados para descargar");
-      return;
-    }
-
-    try {
-      const jsonString = JSON.stringify(result, null, 2); // con indentación
-      const blob = new Blob([jsonString], { type: "application/json" });
-      const url = window.URL.createObjectURL(blob);
-
-      const baseName =
-        lastFilename?.replace(/\.[^/.]+$/, "") || "retroalimentacion";
-      const filename = `${baseName}_informe1.json`;
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Error al generar descarga JSON:", err);
-      toast.error("No se pudo descargar el archivo JSON");
-    }
-  };
-
-  // 👉 descarga los resultados en PDF (informe 1)
   const handleDownloadPdf = () => {
     if (!hasResult) {
       toast.error("No hay resultados para descargar");
@@ -239,6 +235,142 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
   };
 
+  // ✅ NUEVO: ZIP con un PDF por estudiante, cada uno con definiciones de indicadores
+  const handleDownloadZipPerStudent = async () => {
+    if (!hasResult) {
+      toast.error("No hay resultados para descargar");
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      const baseName =
+        lastFilename?.replace(/\.[^/.]+$/, "") || "retroalimentacion";
+
+      for (const student of result.students) {
+        const doc = new jsPDF({
+          unit: "pt",
+          format: "a4",
+        });
+
+        const marginX = 40;
+        const marginY = 40;
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const maxWidth = pageWidth - marginX * 2;
+
+        const lineHeight = 14;
+        let y = marginY;
+
+        const ensureSpace = (lines: number) => {
+          const needed = lines * lineHeight;
+          if (y + needed > pageHeight - marginY) {
+            doc.addPage();
+            y = marginY;
+          }
+        };
+
+        // Encabezado con nombre del estudiante
+        doc.setFontSize(12);
+        doc.setFont("Helvetica", "bold");
+        const headerText = `${student.name} (${student.matricula})`;
+        const headerLines = doc.splitTextToSize(headerText, maxWidth);
+        ensureSpace(headerLines.length);
+        doc.text(headerLines, marginX, y);
+        y += headerLines.length * lineHeight + lineHeight * 0.8;
+
+        // Resumen Fuentes de Datos Segura
+        doc.setFontSize(11);
+        doc.setFont("Helvetica", "normal");
+        const fdTitle = "Fuentes de Datos Segura:";
+        const fdText = student.summary_fuentes_datos_segura || "";
+        const fdLines = doc.splitTextToSize(`${fdTitle}\n${fdText}`, maxWidth);
+        ensureSpace(fdLines.length + 1);
+        doc.text(fdLines, marginX, y);
+        y += fdLines.length * lineHeight + lineHeight * 0.8;
+
+        // Resumen Trabajo en Equipo
+        const teTitle = "Trabajo en Equipo:";
+        const teText = student.summary_trabajo_en_equipo || "";
+        const teLines = doc.splitTextToSize(`${teTitle}\n${teText}`, maxWidth);
+        ensureSpace(teLines.length + 1);
+        doc.text(teLines, marginX, y);
+        y += teLines.length * lineHeight + lineHeight * 0.8;
+
+        // Notas individuales (si existen)
+        if (student.notes && student.notes.trim() !== "") {
+          const notesTitle = "Nota:";
+          const notesText = student.notes.trim();
+          const notesLines = doc.splitTextToSize(
+            `${notesTitle} ${notesText}`,
+            maxWidth
+          );
+          ensureSpace(notesLines.length + 1);
+          doc.setFontSize(10);
+          doc.setTextColor(180, 120, 0);
+          doc.text(notesLines, marginX, y);
+          y += notesLines.length * lineHeight + lineHeight * 0.8;
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(11);
+        }
+
+        // ✅ Sección fija: definición de indicadores evaluados
+        y += lineHeight * 2;
+        doc.setFontSize(12);
+        doc.setFont("Helvetica", "bold");
+        const defTitleLines = doc.splitTextToSize(
+          INDICATOR_DEFINITIONS_TITLE,
+          maxWidth
+        );
+        ensureSpace(defTitleLines.length + 1);
+        doc.text(defTitleLines, marginX, y);
+        y += defTitleLines.length * lineHeight + lineHeight * 0.6;
+
+        doc.setFontSize(10);
+        doc.setFont("Helvetica", "normal");
+        const defBodyLines = doc.splitTextToSize(
+          INDICATOR_DEFINITIONS_BODY,
+          maxWidth
+        );
+        // Si no cabe en esta página, se va a la siguiente
+        defBodyLines.forEach((line: string) => {
+          ensureSpace(1);
+          doc.text(line, marginX, y);
+          y += lineHeight;
+        });
+
+        // Convertimos el PDF a Blob y lo agregamos al ZIP
+        const pdfBlob = doc.output("blob");
+        const safeName = `${student.name}`.replace(
+          /[^a-zA-Z0-9_\-ÁÉÍÓÚáéíóúÑñ]+/g,
+          "_"
+        );
+        const pdfFilename = `${baseName}_${safeName}_${student.matricula}.pdf`;
+
+        zip.file(pdfFilename, pdfBlob);
+      }
+
+      // Generar el ZIP y disparar descarga
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipUrl = window.URL.createObjectURL(zipBlob);
+      const zipName = `${baseName}_informes_por_estudiante.zip`;
+
+      const a = document.createElement("a");
+      a.href = zipUrl;
+      a.download = zipName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(zipUrl);
+
+      toast.success("ZIP generado correctamente");
+    } catch (err) {
+      console.error("Error al generar ZIP:", err);
+      toast.error("No se pudo generar el archivo ZIP");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-accent/20">
       <header className="border-b bg-card/80 backdrop-blur-sm">
@@ -254,7 +386,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Layout en dos columnas: izquierda subida, derecha informes */}
         <div className="grid gap-6 lg:grid-cols-2 items-start">
           {/* Columna izquierda: subida de archivos */}
           <div className="space-y-6">
@@ -320,14 +451,9 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                   {uploading ? "Procesando..." : "Procesar archivo"}
                 </Button>
 
-                {/* Loader infinito mientras se procesa */}
                 {uploading && (
                   <div className="mt-4 flex flex-col items-center gap-2">
-                    <span className="text-xs text-muted-foreground"></span>
-                    <span className="text-xs text-muted-foreground"></span>
-                    <span className="text-xs text-muted-foreground"></span>
                     <Loader />
-                    <span className="text-xs text-muted-foreground"></span>
                     <span className="text-xs text-muted-foreground">
                       Procesando archivo, esto puede tomar un par de minutos...
                     </span>
@@ -388,15 +514,15 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                             size="sm"
                             onClick={handleDownloadPdf}
                           >
-                            Descargar PDF
+                            Descargar PDF de Asignatura
                           </Button>
 
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={handleDownloadJson}
+                            onClick={handleDownloadZipPerStudent}
                           >
-                            Descargar JSON
+                            Descargar ZIP por Estudiante
                           </Button>
                         </div>
                       )}
